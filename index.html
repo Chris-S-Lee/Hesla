@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Wheel 실시간 스마트 통합 대시보드</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            height: 75vh;
+        }
+
+        .left-panel {
+            width: 40%;
+            padding: 20px;
+            box-sizing: border-box;
+            border-right: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            background-color: #1a1a1a;
+        }
+
+        .car-view {
+            text-align: center;
+            border: 1px dashed #555;
+            padding: 15px;
+            border-radius: 10px;
+            background-color: #222;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .car-body {
+            width: 90px;
+            height: 150px;
+            background-color: #333;
+            border: 3px solid #00ffcc;
+            border-radius: 15px;
+            position: relative;
+            margin-top: 10px;
+        }
+
+        .wheel {
+            width: 14px;
+            height: 32px;
+            background-color: #555;
+            border: 2px solid #fff;
+            border-radius: 4px;
+            position: absolute;
+            transform-origin: center;
+            transition: transform 0.02s linear;
+        }
+
+        .wheel.front-left { top: 15px; left: -20px; }
+        .wheel.front-right { top: 15px; right: -20px; }
+        .wheel.rear-left { bottom: 15px; left: -20px; }
+        .wheel.rear-right { bottom: 15px; right: -20px; }
+
+        .data-item {
+            font-size: 1.2rem;
+            margin: 4px 0;
+            padding: 8px;
+            background-color: #2a2a2a;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .gear-highlight {
+            font-weight: bold;
+            color: #ffcc00;
+            font-size: 2rem;
+        }
+
+        .status-msg {
+            color: #ffcc00;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.1rem;
+        }
+
+        .right-panel {
+            width: 60%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+            position: relative;
+        }
+
+        .camera-title {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.8);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 1.1rem;
+            z-index: 10;
+            border: 1px solid #00ffcc;
+        }
+
+        .camera-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #0a0a0a;
+        }
+
+        .indicator {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .bg-on { background-color: #00ffcc; color: #000; }
+        .bg-off { background-color: #444; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="left-panel">
+            <div id="connection-status" class="status-msg">🔌 파이썬 대시보드 서버 연동 대기 중...</div>
+
+            <div class="car-view">
+                <h3 style="margin: 0 0 5px 0;">[ 조향 모형 동기화 ]</h3>
+                <div class="car-body">
+                    <div id="wheel-fl" class="wheel front-left"></div>
+                    <div id="wheel-fr" class="wheel front-right"></div>
+                    <div class="wheel rear-left"></div>
+                    <div class="wheel rear-right"></div>
+                </div>
+            </div>
+
+            <div class="status-data">
+                <div class="data-item">
+                    <span>메인 엔진 시동:</span>
+                    <span id="engine-state" class="indicator bg-off">ENGINE OFF</span>
+                </div>
+                <div class="data-item">
+                    <span>현재 변속 기어:</span>
+                    <span id="current-gear" class="gear-highlight">P</span>
+                </div>
+                <div class="data-item">
+                    <span>순수 페달 스트로크:</span>
+                    <span id="pedal-status">0% (중립)</span>
+                </div>
+                <div class="data-item" style="background-color: #1e2d24; border: 1px solid #00ffcc;">
+                    <span style="color: #00ffcc; font-weight: bold;">최종 관성 모터 출력:</span>
+                    <span id="inertia-status" style="color: #00ffcc; font-weight: bold;">L: 0.00 / R: 0.00</span>
+                </div>
+                <div class="data-item">
+                    <span>전조등 (LED):</span>
+                    <span id="led-state" class="indicator bg-off">OFF</span>
+                </div>
+                <div class="data-item" style="font-size: 1rem; font-family: monospace;">
+                    <span>초음파 센서 피드백:</span>
+                    <span id="sensor-status" style="color: #ffcc00;">A: 0.0cm / B: 0.0cm</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="camera-title" id="cam-label">카메라 연결 대기 중 (P)</div>
+            <img id="webcam-video" class="camera-stream" src="" alt="카메라 라이브 스트림">
+        </div>
+    </div>
+
+    <script>
+        const RASPBERRY_PI_IP = "192.168.0.219";
+        const FRONT_CAM_URL = `http://${RASPBERRY_PI_IP}:8080/front.mjpg`;
+        const REAR_CAM_URL = `http://${RASPBERRY_PI_IP}:8080/rear.mjpg`;
+
+        const videoElement = document.getElementById('webcam-video');
+        const camLabel = document.getElementById('cam-label');
+        const gearLabel = document.getElementById('current-gear');
+        const pedalLabel = document.getElementById('pedal-status');
+        const inertiaLabel = document.getElementById('inertia-status');
+        const statusMsg = document.getElementById('connection-status');
+        const engineLabel = document.getElementById('engine-state');
+        const ledLabel = document.getElementById('led-state');
+        const sensorLabel = document.getElementById('sensor-status');
+        const wheelFL = document.getElementById('wheel-fl');
+        const wheelFR = document.getElementById('wheel-fr');
+
+        let currentGearState = "P";
+
+        const ws = new WebSocket(`ws://127.0.0.1:8765`);
+
+        ws.onopen = () => {
+            statusMsg.innerText = "🟢 파이썬 제어 시스템과 연동됨";
+            statusMsg.style.color = "#00ffcc";
+        };
+
+        ws.onclose = () => {
+            statusMsg.innerText = "❌ 파이썬 제어 시스템 연결 종료";
+            statusMsg.style.color = "#ff3333";
+        };
+
+        ws.onerror = () => {
+            statusMsg.innerText = "❌ 웹소켓 연결 실패";
+            statusMsg.style.color = "#ff3333";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.engine_on) {
+                engineLabel.innerText = "ENGINE ON";
+                engineLabel.className = "indicator bg-on";
+            } else {
+                engineLabel.innerText = "ENGINE OFF";
+                engineLabel.className = "indicator bg-off";
+            }
+
+            const steerDeg = Math.round(((data.steer - 128) / 128) * 35);
+            wheelFL.style.transform = `rotate(${steerDeg}deg)`;
+            wheelFR.style.transform = `rotate(${steerDeg}deg)`;
+
+            if (data.pedal_type === "A") {
+                pedalLabel.innerText = `엑셀 ${data.pedal}%`;
+                pedalLabel.style.color = "#00ffcc";
+            } else if (data.pedal_type === "B") {
+                pedalLabel.innerText = `브레이크 ${data.pedal}%`;
+                pedalLabel.style.color = "#ff3333";
+            } else {
+                pedalLabel.innerText = "0% (중립 정지)";
+                pedalLabel.style.color = "#ffffff";
+            }
+
+            inertiaLabel.innerText = `L: ${data.current_left.toFixed(2)} / R: ${data.current_right.toFixed(2)}`;
+
+            if (data.led_on) {
+                ledLabel.innerText = "LIGHT ON";
+                ledLabel.className = "indicator bg-on";
+            } else {
+                ledLabel.innerText = "OFF";
+                ledLabel.className = "indicator bg-off";
+            }
+
+            sensorLabel.innerText = `A: ${data.dist_A.toFixed(1)}cm / B: ${data.dist_B.toFixed(1)}cm`;
+
+            if (currentGearState !== data.gear) {
+                currentGearState = data.gear;
+                gearLabel.innerText = currentGearState;
+
+                if (currentGearState === "D") {
+                    videoElement.src = FRONT_CAM_URL;
+                    camLabel.innerText = "🎥 전방 카메라 주행 스트림 (D)";
+                    gearLabel.style.color = "#00ffcc";
+                } else if (currentGearState === "R") {
+                    videoElement.src = REAR_CAM_URL;
+                    camLabel.innerText = "🎥 후방 카메라 후진 스트림 (R)";
+                    gearLabel.style.color = "#ff3333";
+                } else if (currentGearState === "N") {
+                    videoElement.src = "";
+                    camLabel.innerText = "⚠️ 중립 기어 대기 (N)";
+                    gearLabel.style.color = "#ffcc00";
+                } else {
+                    videoElement.src = "";
+                    camLabel.innerText = "🔒 주차 및 시동 잠금 (P)";
+                    gearLabel.style.color = "#ffffff";
+                }
+            }
+        };
+    </script>
+</body>
+</html>
